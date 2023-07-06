@@ -1,0 +1,13 @@
+[package]
+name = "jg"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+pest = "2.7.0"
+pest_derive = "2.7.0"
+clap = "2.33.3"
+serde_json = "1.0.99"
+rand = "0.8.5"

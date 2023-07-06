@@ -1,0 +1,1 @@
+{ "myKey": string(5, 10, "prefix-", "-suffix") }
