@@ -48,16 +48,16 @@ enum Sequence {
         #[serde(default)]
         suffix: String,
         #[serde(default)]
-        start: i64
+        start: i64,
     },
     IntSeq {
         #[serde(default)]
-        start: i64
+        start: i64,
     },
     UUID4Seq,
 }
 
-    #[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 struct Components {
     #[serde(default)]
     models: BTreeMap<String, Model>,
@@ -99,62 +99,98 @@ fn generate_json(config: &Config) -> Result<serde_json::Value, String> {
     //Ok(serde_json::Value::default())
 }
 
-fn generate_json_for_model(model: &Model, config: &Config, seq_ctx: &mut BTreeMap<String, i64>) -> Result<serde_json::Value, String> {
+fn generate_json_for_model(
+    model: &Model,
+    config: &Config,
+    seq_ctx: &mut BTreeMap<String, i64>,
+) -> Result<serde_json::Value, String> {
     match model {
         Model::Ref { path: ref_name } => {
             if let Some(components) = &config.components {
                 // Find component type
                 match ref_name.split("/").collect::<Vec<&str>>()[..] {
-                    [_, ref_type, ref_key] => {
-                        match ref_type {
-                            "models" => {
-                                let model = components.models.get(ref_key).expect(
-                                    format!(
-                                        "Can not find model definition. Required by ref: {}",
-                                        ref_name
-                                    )
-                                    .as_str(),
-                                );
-                                return generate_json_for_model(model, config, seq_ctx);
-                            }
-                            "constants" => {
-                                let constant = components.constants.get(ref_key).expect(
-                                    format!(
-                                        "Can not find constant definition. Required by ref: {}",
-                                        ref_name
-                                    )
-                                    .as_str(),
-                                );
-                                let json_val = serde_json::to_value(constant).expect(format!("Error while converting yaml value of {} to json value", ref_key).as_str());
-                                return Ok(json_val);
-                            }
-                            "sequences" => {
-                                let mut sequence = components.sequences.get(ref_key).expect(format!(
+                    [_, ref_type, ref_key] => match ref_type {
+                        "models" => {
+                            let model = components.models.get(ref_key).expect(
+                                format!(
+                                    "Can not find model definition. Required by ref: {}",
+                                    ref_name
+                                )
+                                .as_str(),
+                            );
+                            return generate_json_for_model(model, config, seq_ctx);
+                        }
+                        "constants" => {
+                            let constant = components.constants.get(ref_key).expect(
+                                format!(
                                     "Can not find constant definition. Required by ref: {}",
                                     ref_name
-                                ).as_str());
-                                
-                                match &mut sequence {
-                                    Sequence::StrSeq { prefix, suffix, start } => {
-                                        let val = seq_ctx.entry(ref_key.to_string()).or_insert(*start);
-                                        *val = *val + 1;
-                                        return Ok(serde_json::to_value(format!("{}{}{}", *prefix, val, *suffix))
-                                            .expect(format!("Error while converting seq. value to json {}", ref_key).as_str()));
-                                    }
-                                    Sequence::IntSeq { start } => {
-                                        let val = seq_ctx.entry(ref_key.to_string()).or_insert(*start);
-                                        *val = *val + 1;
-                                        return Ok(serde_json::to_value(val).expect(format!("Error while converting seq. value to json {}", ref_key).as_str()));
+                                )
+                                .as_str(),
+                            );
+                            let json_val = serde_json::to_value(constant).expect(
+                                format!(
+                                    "Error while converting yaml value of {} to json value",
+                                    ref_key
+                                )
+                                .as_str(),
+                            );
+                            return Ok(json_val);
+                        }
+                        "sequences" => {
+                            let mut sequence = components.sequences.get(ref_key).expect(
+                                format!(
+                                    "Can not find constant definition. Required by ref: {}",
+                                    ref_name
+                                )
+                                .as_str(),
+                            );
 
-                                    }
-                                    Sequence::UUID4Seq => {
-                                        return Ok(serde_json::to_value(Uuid::new_v4().to_string()) .expect(format!("Error while converting seq. value to json {}", ref_key).as_str()));
-                                    }
+                            match &mut sequence {
+                                Sequence::StrSeq {
+                                    prefix,
+                                    suffix,
+                                    start,
+                                } => {
+                                    let val = seq_ctx.entry(ref_key.to_string()).or_insert(*start);
+                                    *val = *val + 1;
+                                    return Ok(serde_json::to_value(format!(
+                                        "{}{}{}",
+                                        *prefix, val, *suffix
+                                    ))
+                                    .expect(
+                                        format!(
+                                            "Error while converting seq. value to json {}",
+                                            ref_key
+                                        )
+                                        .as_str(),
+                                    ));
+                                }
+                                Sequence::IntSeq { start } => {
+                                    let val = seq_ctx.entry(ref_key.to_string()).or_insert(*start);
+                                    *val = *val + 1;
+                                    return Ok(serde_json::to_value(val).expect(
+                                        format!(
+                                            "Error while converting seq. value to json {}",
+                                            ref_key
+                                        )
+                                        .as_str(),
+                                    ));
+                                }
+                                Sequence::UUID4Seq => {
+                                    return Ok(serde_json::to_value(Uuid::new_v4().to_string())
+                                        .expect(
+                                            format!(
+                                                "Error while converting seq. value to json {}",
+                                                ref_key
+                                            )
+                                            .as_str(),
+                                        ));
                                 }
                             }
-                            _ => return Err(format!("Invalid ref type: {}", ref_type)),
                         }
-                    }
+                        _ => return Err(format!("Invalid ref type: {}", ref_type)),
+                    },
                     _ => return Err(format!("Error while parsing ref string: {}", ref_name)),
                 }
             }
