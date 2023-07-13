@@ -314,9 +314,10 @@ fn main() {
 
     let qwe = generate_json(&mut config);
 
-    println!("{:#?}", config);
-    println!();
-    println!();
-    println!();
-    println!("{:#?}", qwe);
+    // println!("{:#?}", config);
+    // println!();
+    // println!();
+    // println!();
+    // println!("{:#?}", qwe);
+    println!("{}", serde_json::to_string_pretty(&qwe.unwrap()).unwrap().to_string());
 }
