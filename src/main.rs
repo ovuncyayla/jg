@@ -10,7 +10,7 @@ use uuid::Uuid;
 #[serde(tag = "type")]
 enum Model {
     Ref {
-        model: String,
+        path: String,
     },
     Object {
         properties: Option<std::collections::BTreeMap<String, Model>>,
@@ -101,7 +101,7 @@ fn generate_json(config: &Config) -> Result<serde_json::Value, String> {
 
 fn generate_json_for_model(model: &Model, config: &Config, seq_ctx: &mut BTreeMap<String, i64>) -> Result<serde_json::Value, String> {
     match model {
-        Model::Ref { model: ref_name } => {
+        Model::Ref { path: ref_name } => {
             if let Some(components) = &config.components {
                 // Find component type
                 match ref_name.split("/").collect::<Vec<&str>>()[..] {
@@ -148,8 +148,7 @@ fn generate_json_for_model(model: &Model, config: &Config, seq_ctx: &mut BTreeMa
 
                                     }
                                     Sequence::UUID4Seq => {
-                                        return Ok(serde_json::to_value(Uuid::new_v4().to_string())
-                                            .expect(format!("Error while converting seq. value to json {}", ref_key).as_str()));
+                                        return Ok(serde_json::to_value(Uuid::new_v4().to_string()) .expect(format!("Error while converting seq. value to json {}", ref_key).as_str()));
                                     }
                                 }
                             }
