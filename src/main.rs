@@ -1,37 +1,214 @@
-use std::collections::HashMap;
-use std::fs;
-use std::io::{self, Read};
+use rand::Rng;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::fs;
+use std::io::Read;
 
 #[derive(Serialize, Deserialize, Debug)]
-#[serde(tag="type")]
+#[serde(tag = "type")]
 enum Model {
     Ref {
-        model: String
+        model: String,
     },
     Object {
         properties: Option<std::collections::BTreeMap<String, Model>>,
-        value: Option<serde_yaml::Mapping>
+        value: Option<serde_yaml::Mapping>,
     },
     Array {
         items: Option<Vec<Model>>,
-        value: Option<serde_yaml::Sequence>
+        value: Option<serde_yaml::Sequence>,
     },
     String {
-        value: Option<String>
+        value: Option<String>,
     },
     Integer {
-        value: Option<i64>,
         min: Option<i64>,
         max: Option<i64>,
+        value: Option<i64>,
     },
     Float {
-        value: Option<f64>,
         min: Option<f64>,
         max: Option<f64>,
+        value: Option<f64>,
     },
     Timestamp {
-        format: Option<String>
+        format: Option<String>,
+        value: Option<String>,
+    },
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Components {
+    #[serde(default)]
+    models: BTreeMap<String, Model>,
+    #[serde(default)]
+    constants: BTreeMap<String, serde_yaml::Value>,
+    #[serde(default)]
+    sequences: BTreeMap<String, serde_yaml::Value>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Meta {
+    size: i32,
+    prettify: bool,
+}
+
+impl Default for Meta {
+    fn default() -> Self {
+        Meta {
+            size: 1,
+            prettify: false,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Config {
+    #[serde(default)]
+    meta: Meta,
+    schema: Model,
+    components: Option<Components>,
+}
+
+fn generate_json(config: &Config) -> Result<serde_json::Value, String> {
+    let schema = &config.schema;
+    //let components = &config.components;
+
+    generate_json_for_model(schema, config)
+    //Ok(serde_json::Value::default())
+}
+
+fn generate_json_for_model(model: &Model, config: &Config) -> Result<serde_json::Value, String> {
+    match model {
+        Model::Ref { model: ref_name } => {
+
+            if let Some(components) = &config.components {
+                // Find component type
+                match ref_name.split("/").collect::<Vec<&str>>()[..] {
+                    [_, ref_type, ref_key] => {
+                        match ref_type {
+                            "models" => {
+                                let model = components.models.get(ref_key).expect(format!("Can not find model definition. Required by ref: {}", ref_name).as_str());
+                                return generate_json_for_model(model, config);
+                            }
+                            "constants" => {
+                                let constant = components.constants.get(ref_key).expect(format!("Can not find constant definition. Required by ref: {}", ref_name).as_str());
+                                let json_val = serde_json::to_value(constant).expect(format!("Generic erro while converting yaml value of {} to json value", ref_key).as_str());
+                                return Ok(json_val);
+                            }
+                            "sequences" => {
+                                todo!()
+                            }
+                            _ => return Err(format!("Invalid ref type: {}", ref_type)),
+                        }
+                    }
+                    _ => return Err(format!("Error while parsing ref string: {}", ref_name)),
+                }
+            }
+
+            Err(format!("Can not find component definitions in config file. Required by ref: {}", ref_name))
+        }
+        Model::Object { properties, value } => {
+            if let Some(mapping) = value {
+                let map_as_value: serde_yaml::Value =
+                    serde_yaml::to_value(mapping).expect("Error while serializing object value");
+                let map: serde_json::Value = serde_yaml::from_value(map_as_value)
+                    .expect("Error while converting yaml to json value");
+                return Ok(map);
+            }
+
+            if let Some(props) = properties {
+                let mut json_obj = serde_json::Map::new();
+                for (key, prop_schema) in props {
+                    let value = generate_json_for_model(prop_schema, config).expect(
+                        format!("Error while generating object property: {}", key).as_str(),
+                    );
+                    json_obj.insert(key.clone(), value);
+                }
+                return Ok(serde_json::to_value(json_obj).expect(
+                    "Generic serialization error occured while converting map to json value",
+                ));
+            }
+
+            Err(
+                "Either proprties or value field must be defined for model type 'Object'"
+                    .to_string(),
+            )
+        }
+        Model::Array { items, value } => {
+            if let Some(items) = items {
+                let mut json_array: Vec<serde_json::Value> = Vec::new();
+                for item_schema in items {
+                    let item_value = generate_json_for_model(item_schema, config)
+                        .expect("Error while generating array element");
+                    json_array.push(item_value);
+                }
+                return Ok(serde_json::Value::Array(json_array));
+            }
+
+            if let Some(sequence) = value {
+                let mut json_array: Vec<serde_json::Value> = Vec::new();
+                for s in sequence {
+                    let json_val: serde_json::Value = serde_yaml::from_value(s.clone())
+                        .expect("Error while converting yaml value to json");
+                    json_array.push(json_val);
+                }
+                return Ok(serde_json::Value::Array(json_array));
+            }
+
+            Err("Either items or value field must be defined for model type 'Array'".to_string())
+        }
+        Model::String { value } => {
+            if let Some(value) = value {
+                Ok(serde_json::Value::String(value.clone()))
+            } else {
+                Ok(serde_json::Value::Null)
+            }
+        }
+        Model::Integer { value, min, max } => {
+            if let Some(value) = value {
+                Ok(serde_json::Value::Number(value.clone().into()))
+            } else {
+                let mut rng = rand::thread_rng();
+                let res = match (min, max) {
+                    (None, None) => rng.gen(),
+                    (None, Some(max)) => rng.gen_range(i64::MIN..*max),
+                    (Some(min), None) => rng.gen_range(*min..i64::MAX),
+                    (Some(min), Some(max)) => rng.gen_range(*min..*max),
+                };
+
+                Ok(serde_json::to_value(res).expect("Error while generating random integer"))
+            }
+        }
+        Model::Float { value, min, max } => {
+            if let Some(value) = value {
+                Ok(serde_json::Value::from(*value))
+            } else {
+                let mut rng = rand::thread_rng();
+                let res = match (min, max) {
+                    (None, None) => rng.gen(),
+                    (None, Some(max)) => rng.gen_range(f64::MIN..*max),
+                    (Some(min), None) => rng.gen_range(*min..f64::MAX),
+                    (Some(min), Some(max)) => rng.gen_range(*min..*max),
+                };
+
+                Ok(serde_json::to_value(res).expect("Error while generating random float"))
+            }
+        }
+        Model::Timestamp {
+            value,
+            format: _format,
+        } => {
+            // Handle timestamp generation logic here
+
+            if let Some(value) = value {
+                return Ok(serde_json::from_str(value)
+                    .expect("Error while parsing value field for timestamp"));
+            }
+
+            Ok(serde_json::to_value(chrono::Utc::now().to_rfc3339())
+                .expect("Generic error while generating timestamp"))
+        }
     }
 }
 
@@ -41,25 +218,9 @@ fn main() {
     file.read_to_string(&mut contents)
         .expect("Failed to read input file");
 
-    let config: serde_yaml::Value = serde_yaml::from_str(&contents).unwrap();    
-    let data = &config["data"];
-    let schemas = &config["components"]["schemas"];
-    let constants = &config["components"]["constants"];
-    let sequences = &config["components"]["sequences"];
+    let config: Config = serde_yaml::from_str(&contents).unwrap();
 
-    println!("{:?}", data);
-    println!();
-    let d : Model = serde_yaml::from_value(data.clone()).unwrap();
-    println!("{:?}", d);
-    
-    println!();
-    println!();
-    println!("{}", serde_yaml::to_string(&d).unwrap());
+    let qwe = generate_json(&config);
 
-
-    println!();
-    println!();
-    println!("{}", serde_json::to_string_pretty(&d).unwrap());
-
-    //println!("{}", serde_json::to_string_pretty(schemas).unwrap());
+    println!("{:#?}", qwe);
 }
