@@ -1,8 +1,10 @@
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+use std::borrow::BorrowMut;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::Read;
+use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "type")]
@@ -38,13 +40,31 @@ enum Model {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(tag = "type")]
+enum Sequence {
+    StrSeq {
+        #[serde(default)]
+        prefix: String,
+        #[serde(default)]
+        suffix: String,
+        #[serde(default)]
+        start: i64
+    },
+    IntSeq {
+        #[serde(default)]
+        start: i64
+    },
+    UUID4Seq,
+}
+
+    #[derive(Serialize, Deserialize, Debug)]
 struct Components {
     #[serde(default)]
     models: BTreeMap<String, Model>,
     #[serde(default)]
     constants: BTreeMap<String, serde_yaml::Value>,
     #[serde(default)]
-    sequences: BTreeMap<String, serde_yaml::Value>,
+    sequences: BTreeMap<String, Sequence>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -74,30 +94,64 @@ fn generate_json(config: &Config) -> Result<serde_json::Value, String> {
     let schema = &config.schema;
     //let components = &config.components;
 
-    generate_json_for_model(schema, config)
+    let mut seq_ctx: BTreeMap<String, i64> = BTreeMap::new();
+    generate_json_for_model(schema, config, seq_ctx.borrow_mut())
     //Ok(serde_json::Value::default())
 }
 
-fn generate_json_for_model(model: &Model, config: &Config) -> Result<serde_json::Value, String> {
+fn generate_json_for_model(model: &Model, config: &Config, seq_ctx: &mut BTreeMap<String, i64>) -> Result<serde_json::Value, String> {
     match model {
         Model::Ref { model: ref_name } => {
-
             if let Some(components) = &config.components {
                 // Find component type
                 match ref_name.split("/").collect::<Vec<&str>>()[..] {
                     [_, ref_type, ref_key] => {
                         match ref_type {
                             "models" => {
-                                let model = components.models.get(ref_key).expect(format!("Can not find model definition. Required by ref: {}", ref_name).as_str());
-                                return generate_json_for_model(model, config);
+                                let model = components.models.get(ref_key).expect(
+                                    format!(
+                                        "Can not find model definition. Required by ref: {}",
+                                        ref_name
+                                    )
+                                    .as_str(),
+                                );
+                                return generate_json_for_model(model, config, seq_ctx);
                             }
                             "constants" => {
-                                let constant = components.constants.get(ref_key).expect(format!("Can not find constant definition. Required by ref: {}", ref_name).as_str());
-                                let json_val = serde_json::to_value(constant).expect(format!("Generic erro while converting yaml value of {} to json value", ref_key).as_str());
+                                let constant = components.constants.get(ref_key).expect(
+                                    format!(
+                                        "Can not find constant definition. Required by ref: {}",
+                                        ref_name
+                                    )
+                                    .as_str(),
+                                );
+                                let json_val = serde_json::to_value(constant).expect(format!("Error while converting yaml value of {} to json value", ref_key).as_str());
                                 return Ok(json_val);
                             }
                             "sequences" => {
-                                todo!()
+                                let mut sequence = components.sequences.get(ref_key).expect(format!(
+                                    "Can not find constant definition. Required by ref: {}",
+                                    ref_name
+                                ).as_str());
+                                
+                                match &mut sequence {
+                                    Sequence::StrSeq { prefix, suffix, start } => {
+                                        let val = seq_ctx.entry(ref_key.to_string()).or_insert(*start);
+                                        *val = *val + 1;
+                                        return Ok(serde_json::to_value(format!("{}{}{}", *prefix, val, *suffix))
+                                            .expect(format!("Error while converting seq. value to json {}", ref_key).as_str()));
+                                    }
+                                    Sequence::IntSeq { start } => {
+                                        let val = seq_ctx.entry(ref_key.to_string()).or_insert(*start);
+                                        *val = *val + 1;
+                                        return Ok(serde_json::to_value(val).expect(format!("Error while converting seq. value to json {}", ref_key).as_str()));
+
+                                    }
+                                    Sequence::UUID4Seq => {
+                                        return Ok(serde_json::to_value(Uuid::new_v4().to_string())
+                                            .expect(format!("Error while converting seq. value to json {}", ref_key).as_str()));
+                                    }
+                                }
                             }
                             _ => return Err(format!("Invalid ref type: {}", ref_type)),
                         }
@@ -106,7 +160,10 @@ fn generate_json_for_model(model: &Model, config: &Config) -> Result<serde_json:
                 }
             }
 
-            Err(format!("Can not find component definitions in config file. Required by ref: {}", ref_name))
+            Err(format!(
+                "Can not find component definitions in config file. Required by ref: {}",
+                ref_name
+            ))
         }
         Model::Object { properties, value } => {
             if let Some(mapping) = value {
@@ -120,7 +177,7 @@ fn generate_json_for_model(model: &Model, config: &Config) -> Result<serde_json:
             if let Some(props) = properties {
                 let mut json_obj = serde_json::Map::new();
                 for (key, prop_schema) in props {
-                    let value = generate_json_for_model(prop_schema, config).expect(
+                    let value = generate_json_for_model(prop_schema, config, seq_ctx).expect(
                         format!("Error while generating object property: {}", key).as_str(),
                     );
                     json_obj.insert(key.clone(), value);
@@ -139,7 +196,7 @@ fn generate_json_for_model(model: &Model, config: &Config) -> Result<serde_json:
             if let Some(items) = items {
                 let mut json_array: Vec<serde_json::Value> = Vec::new();
                 for item_schema in items {
-                    let item_value = generate_json_for_model(item_schema, config)
+                    let item_value = generate_json_for_model(item_schema, config, seq_ctx)
                         .expect("Error while generating array element");
                     json_array.push(item_value);
                 }
@@ -218,9 +275,13 @@ fn main() {
     file.read_to_string(&mut contents)
         .expect("Failed to read input file");
 
-    let config: Config = serde_yaml::from_str(&contents).unwrap();
+    let mut config: Config = serde_yaml::from_str(&contents).unwrap();
 
-    let qwe = generate_json(&config);
+    let qwe = generate_json(&mut config);
 
+    println!("{:#?}", config);
+    println!();
+    println!();
+    println!();
     println!("{:#?}", qwe);
 }
