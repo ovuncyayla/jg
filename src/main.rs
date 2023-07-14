@@ -19,6 +19,7 @@ enum Model {
     Array {
         items: Option<Vec<Model>>,
         value: Option<serde_yaml::Sequence>,
+        element: Option<Box<ArrayElement>>
     },
     String {
         value: Option<String>,
@@ -37,6 +38,12 @@ enum Model {
         format: Option<String>,
         value: Option<String>,
     },
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct ArrayElement {
+    count: i32,
+    model: Model
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -227,7 +234,22 @@ fn generate_json_for_model(
                     .to_string(),
             )
         }
-        Model::Array { items, value } => {
+        Model::Array { items, value, element } => {
+            if let Some(elem) = element {
+               let mut elems_vec : Vec<serde_json::Value> = Vec::new();
+                for _ in 0..elem.count {
+                    
+                    let m = generate_json_for_model(&elem.model, config, seq_ctx)
+                        .expect(format!("Error while generating value for array element: {:?}", elem).as_str());
+
+                    elems_vec.push(m);
+                }
+                return Ok(
+                    serde_json::to_value(elems_vec)
+                        .expect("Error while converting array elements to json value")
+                );
+            }
+
             if let Some(items) = items {
                 let mut json_array: Vec<serde_json::Value> = Vec::new();
                 for item_schema in items {
@@ -238,10 +260,10 @@ fn generate_json_for_model(
                 return Ok(serde_json::Value::Array(json_array));
             }
 
-            if let Some(sequence) = value {
+            if let Some(value) = value {
                 let mut json_array: Vec<serde_json::Value> = Vec::new();
-                for s in sequence {
-                    let json_val: serde_json::Value = serde_yaml::from_value(s.clone())
+                for val in value {
+                    let json_val: serde_json::Value = serde_yaml::from_value(val.clone())
                         .expect("Error while converting yaml value to json");
                     json_array.push(json_val);
                 }
