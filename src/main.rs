@@ -21,6 +21,9 @@ enum Model {
         value: Option<serde_yaml::Sequence>,
         element: Option<Box<ArrayElement>>
     },
+    Boolean {
+        value: Option<bool>,
+    },
     String {
         value: Option<String>,
     },
@@ -234,6 +237,13 @@ fn generate_json_for_model(
                     .to_string(),
             )
         }
+        Model::Boolean { value } => {
+            if let Some(value) = value {
+                Ok(serde_json::Value::Bool(value.clone()))
+            } else {
+                Ok(serde_json::Value::Bool(false))
+            }
+        }
         Model::Array { items, value, element } => {
             if let Some(elem) = element {
                let mut elems_vec : Vec<serde_json::Value> = Vec::new();
@@ -270,7 +280,7 @@ fn generate_json_for_model(
                 return Ok(serde_json::Value::Array(json_array));
             }
 
-            Err("Either items or value field must be defined for model type 'Array'".to_string())
+            Err("Either element, items or value field must be defined for model type 'Array'".to_string())
         }
         Model::String { value } => {
             if let Some(value) = value {
@@ -336,10 +346,5 @@ fn main() {
 
     let qwe = generate_json(&mut config);
 
-    // println!("{:#?}", config);
-    // println!();
-    // println!();
-    // println!();
-    // println!("{:#?}", qwe);
     println!("{}", serde_json::to_string_pretty(&qwe.unwrap()).unwrap().to_string());
 }
