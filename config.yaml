@@ -1,0 +1,65 @@
+schema:
+  type: Object
+  properties:
+    specversion:
+      type: Ref
+      path: components/constants/PI
+    id:
+      type: Ref
+      path: components/sequences/UUID_SEQ
+    type:
+      type: String
+      value: "event_type"
+    someBooleanVal:
+      type: Boolean
+      value: false
+    source:
+      type: String
+      value: "some/source/name"
+    time:
+      type: Timestamp
+    correlationid:
+      type: Ref
+      path: components/sequences/UUID_SEQ
+    data:
+      type: Ref
+      path: components/models/SomeObject
+components:
+  models:
+    SomeObject:
+      type: Object
+      properties:
+        id:
+          type: Ref
+          path: components/sequences/ID_SEQ
+        some_float:
+          type: Float 
+          min: 100
+          max: 300
+        some_array:
+          type: Array
+          items:
+            - type: Ref
+              path: components/sequences/UUID_SEQ
+        some_other_array:
+          type: Array
+          element:
+            count: 5
+            model:
+              type: Ref
+              path: components/sequences/INTY_SEQ
+  constants:
+    PI: 3.14
+    SOME_TEXT: "123123123123"
+    SOME_INT: 123123
+    myDescription: "This is some description"
+  sequences:
+    UUID_SEQ:
+      type: UUID4Seq
+    ID_SEQ:
+      type: StrSeq
+      start: 100
+      prefix: "PREF"
+      suffix: "SUFF"
+    INTY_SEQ:
+      type: IntSeq
