@@ -1,9 +1,10 @@
+use clap::Parser;
+use std::path::PathBuf;
+use log::debug;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
-use std::fs;
-use std::io::Read;
 use std::borrow::BorrowMut;
+use std::collections::BTreeMap;
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -101,16 +102,19 @@ struct Config {
 }
 
 impl From<PathBuf> for Config {
-
     fn from(path: PathBuf) -> Self {
         let mut file = std::fs::File::open(path.clone()).expect("Failed to open input file");
         let mut contents = String::new();
         std::io::Read::read_to_string(&mut file, &mut contents).expect("Failed to read input file");
-        // println!("{}", &contents);
-        serde_yaml::from_str(&contents)
-            .expect(format!("Error while deserializing config file: {}", path.to_string_lossy()).as_str())
+        debug!("{}", &contents);
+        serde_yaml::from_str(&contents).expect(
+            format!(
+                "Error while deserializing config file: {}",
+                path.to_string_lossy()
+            )
+            .as_str(),
+        )
     }
-
 }
 
 fn generate_json(config: &Config) -> Result<serde_json::Value, String> {
@@ -355,9 +359,6 @@ fn generate_json_for_model(
     }
 }
 
-use clap::Parser;
-use std::path::PathBuf;
-
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct JGArgs {
@@ -367,22 +368,20 @@ struct JGArgs {
 }
 
 fn main() {
+    let env = env_logger::Env::default()
+        .filter_or("JG_LOG", "info")
+        .write_style_or("JG_LOG_STYLE", "always");
+
+    env_logger::init_from_env(env);
+
     let args = JGArgs::parse();
-    // println!("{:?}", args.config.unwrap());
-    
-    // let mut file = fs::File::open("config.yaml").expect("Failed to open input file");
-    // let mut contents = String::new();
-    // file.read_to_string(&mut contents)
-    //     .expect("Failed to read input file");
-    //
-    // let mut config: Config = serde_yaml::from_str(&contents).unwrap();
     let mut config: Config = Config::from(args.config.unwrap());
 
-    let qwe = generate_json(&mut config);
+    let output = generate_json(&mut config);
 
     println!(
         "{}",
-        serde_json::to_string_pretty(&qwe.unwrap())
+        serde_json::to_string_pretty(&output.unwrap())
             .unwrap()
             .to_string()
     );
