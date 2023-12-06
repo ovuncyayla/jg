@@ -1,9 +1,9 @@
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use std::borrow::BorrowMut;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::Read;
+use std::borrow::BorrowMut;
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -19,7 +19,7 @@ enum Model {
     Array {
         items: Option<Vec<Model>>,
         value: Option<serde_yaml::Sequence>,
-        element: Option<Box<ArrayElement>>
+        element: Option<Box<ArrayElement>>,
     },
     Boolean {
         value: Option<bool>,
@@ -46,7 +46,7 @@ enum Model {
 #[derive(Serialize, Deserialize, Debug)]
 struct ArrayElement {
     count: i32,
-    model: Model
+    model: Model,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -98,6 +98,19 @@ struct Config {
     meta: Meta,
     schema: Model,
     components: Option<Components>,
+}
+
+impl From<PathBuf> for Config {
+
+    fn from(path: PathBuf) -> Self {
+        let mut file = std::fs::File::open(path.clone()).expect("Failed to open input file");
+        let mut contents = String::new();
+        std::io::Read::read_to_string(&mut file, &mut contents).expect("Failed to read input file");
+        // println!("{}", &contents);
+        serde_yaml::from_str(&contents)
+            .expect(format!("Error while deserializing config file: {}", path.to_string_lossy()).as_str())
+    }
+
 }
 
 fn generate_json(config: &Config) -> Result<serde_json::Value, String> {
@@ -244,20 +257,23 @@ fn generate_json_for_model(
                 Ok(serde_json::Value::Bool(false))
             }
         }
-        Model::Array { items, value, element } => {
+        Model::Array {
+            items,
+            value,
+            element,
+        } => {
             if let Some(elem) = element {
-               let mut elems_vec : Vec<serde_json::Value> = Vec::new();
+                let mut elems_vec: Vec<serde_json::Value> = Vec::new();
                 for _ in 0..elem.count {
-                    
-                    let m = generate_json_for_model(&elem.model, config, seq_ctx)
-                        .expect(format!("Error while generating value for array element: {:?}", elem).as_str());
+                    let m = generate_json_for_model(&elem.model, config, seq_ctx).expect(
+                        format!("Error while generating value for array element: {:?}", elem)
+                            .as_str(),
+                    );
 
                     elems_vec.push(m);
                 }
-                return Ok(
-                    serde_json::to_value(elems_vec)
-                        .expect("Error while converting array elements to json value")
-                );
+                return Ok(serde_json::to_value(elems_vec)
+                    .expect("Error while converting array elements to json value"));
             }
 
             if let Some(items) = items {
@@ -280,7 +296,10 @@ fn generate_json_for_model(
                 return Ok(serde_json::Value::Array(json_array));
             }
 
-            Err("Either element, items or value field must be defined for model type 'Array'".to_string())
+            Err(
+                "Either element, items or value field must be defined for model type 'Array'"
+                    .to_string(),
+            )
         }
         Model::String { value } => {
             if let Some(value) = value {
@@ -336,15 +355,35 @@ fn generate_json_for_model(
     }
 }
 
-fn main() {
-    let mut file = fs::File::open("config.yaml").expect("Failed to open input file");
-    let mut contents = String::new();
-    file.read_to_string(&mut contents)
-        .expect("Failed to read input file");
+use clap::Parser;
+use std::path::PathBuf;
 
-    let mut config: Config = serde_yaml::from_str(&contents).unwrap();
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct JGArgs {
+    /// Sets a custom config file
+    #[arg(short, long, value_name = "Config File", value_parser = clap::value_parser!(PathBuf),  default_value = "config.yaml")]
+    config: Option<PathBuf>,
+}
+
+fn main() {
+    let args = JGArgs::parse();
+    // println!("{:?}", args.config.unwrap());
+    
+    // let mut file = fs::File::open("config.yaml").expect("Failed to open input file");
+    // let mut contents = String::new();
+    // file.read_to_string(&mut contents)
+    //     .expect("Failed to read input file");
+    //
+    // let mut config: Config = serde_yaml::from_str(&contents).unwrap();
+    let mut config: Config = Config::from(args.config.unwrap());
 
     let qwe = generate_json(&mut config);
 
-    println!("{}", serde_json::to_string_pretty(&qwe.unwrap()).unwrap().to_string());
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&qwe.unwrap())
+            .unwrap()
+            .to_string()
+    );
 }
