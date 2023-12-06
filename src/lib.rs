@@ -1,6 +1,3 @@
-pub mod parser;
-pub mod generator;
-
 pub fn add(left: usize, right: usize) -> usize {
     left + right
 }
