@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use uuid::Uuid;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "type")]
 pub enum Model {
     Ref {
@@ -43,13 +43,13 @@ pub enum Model {
     },
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ArrayElement {
-    count: i32,
-    model: Model,
+    pub count: i32,
+    pub model: Model,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "type")]
 pub enum Sequence {
     StrSeq {
@@ -67,20 +67,20 @@ pub enum Sequence {
     UUID4Seq,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-struct Components {
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Components {
     #[serde(default)]
-    models: BTreeMap<String, Model>,
+    pub models: BTreeMap<String, Model>,
     #[serde(default)]
-    constants: BTreeMap<String, serde_yaml::Value>,
+    pub constants: BTreeMap<String, serde_yaml::Value>,
     #[serde(default)]
-    sequences: BTreeMap<String, Sequence>,
+    pub sequences: BTreeMap<String, Sequence>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Meta {
-    size: i32,
-    prettify: bool,
+    pub size: i32,
+    pub prettify: bool,
 }
 
 impl Default for Meta {
@@ -92,12 +92,12 @@ impl Default for Meta {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Config {
     #[serde(default)]
-    meta: Meta,
-    schema: Model,
-    components: Option<Components>,
+    pub meta: Meta,
+    pub schema: Model,
+    pub components: Option<Components>,
 }
 
 impl From<PathBuf> for Config {
